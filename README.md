@@ -1,1 +1,2 @@
-# dnn-architecture-simulator
+pip install -r requirements.txt
+
