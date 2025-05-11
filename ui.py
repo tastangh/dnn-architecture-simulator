@@ -1,9 +1,11 @@
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QSpinBox, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLineEdit, QGridLayout, QTextEdit, QMessageBox, QGroupBox, QScrollArea
+    QPushButton, QLineEdit, QGridLayout, QTextEdit, QMessageBox, QGroupBox, QScrollArea, QDialog, QFormLayout, QDialogButtonBox
 )
 from backend import SimpleDNN
 import numpy as np
+from matplotlib import pyplot as plt
+from matplotlib.patches import FancyArrowPatch
 
 class DNNConfigurator(QWidget):
     def __init__(self):
@@ -18,9 +20,10 @@ class DNNConfigurator(QWidget):
         self.input_boxes = []
         self.hidden_layer_inputs = []
         self.output_boxes = []
+        self.manual_weights = []
+        self.manual_biases = []
 
         self.result_text = QTextEdit()
-
         self.network_config = None
         self.dnn = None
 
@@ -82,17 +85,17 @@ class DNNConfigurator(QWidget):
         param_btn.clicked.connect(self.enter_parameters)
         layout.addWidget(param_btn)
 
-        # BUTTON
+        # RUN BUTTON
         btn = QPushButton("Adım At")
         btn.clicked.connect(self.run_step)
         layout.addWidget(btn)
 
-        # ARCHITECTURE DIAGRAM
+        # VISUALIZATION BUTTON
         diagram_btn = QPushButton("Ağ Yapısını Görselleştir")
         diagram_btn.clicked.connect(self.visualize_architecture)
         layout.addWidget(diagram_btn)
 
-        # RESULT
+        # RESULTS
         self.result_text.setReadOnly(True)
         layout.addWidget(self.result_text)
 
@@ -157,24 +160,38 @@ class DNNConfigurator(QWidget):
             self.hidden_layer_inputs.append(spin)
 
     def visualize_architecture(self):
-        from matplotlib import pyplot as plt
-
         try:
             layer_sizes = [self.input_spin.value()] + [spin.value() for spin in self.hidden_layer_inputs] + [self.output_spin.value()]
             max_neurons = max(layer_sizes)
-            fig, ax = plt.subplots(figsize=(10, 6))
+            fig, ax = plt.subplots(figsize=(12, 6))
+
+            neuron_positions = []
 
             for i, layer_size in enumerate(layer_sizes):
                 y_offset = (max_neurons - layer_size) / 2
+                layer_positions = []
                 for j in range(layer_size):
-                    circle = plt.Circle((i * 2, max_neurons - j - y_offset), 0.3, color='skyblue')
+                    x = i * 2
+                    y = max_neurons - j - y_offset
+                    circle = plt.Circle((x, y), 0.3, color='skyblue', zorder=2)
                     ax.add_patch(circle)
+                    ax.text(x, y, f"{j+1}", ha='center', va='center', zorder=3, fontsize=8)
+                    layer_positions.append((x, y))
+                neuron_positions.append(layer_positions)
+                ax.text(x, max_neurons + 1, f"Layer {i+1}\n({layer_size} neurons)", ha='center', fontsize=9)
 
-            ax.set_xlim(-1, len(layer_sizes)*2)
-            ax.set_ylim(0, max_neurons + 1)
+            for l in range(len(neuron_positions) - 1):
+                for src in neuron_positions[l]:
+                    for dst in neuron_positions[l + 1]:
+                        arrow = FancyArrowPatch(src, dst, arrowstyle='->', mutation_scale=10, color='gray', lw=0.5, zorder=1)
+                        ax.add_patch(arrow)
+
+            ax.set_xlim(-1, len(layer_sizes) * 2)
+            ax.set_ylim(-1, max_neurons + 3)
             ax.set_aspect('equal')
             ax.axis('off')
-            plt.title("DNN Katman Yapısı")
+            plt.title("DNN Katman Yapısı (nöronlar + oklar)")
+            plt.tight_layout()
             plt.show()
 
         except Exception as e:
@@ -182,22 +199,19 @@ class DNNConfigurator(QWidget):
 
     def enter_parameters(self):
         try:
-            from PyQt5.QtWidgets import QDialog, QFormLayout, QDialogButtonBox
-
             dialog = QDialog(self)
             dialog.setWindowTitle("Ağırlık ve Bias Girişi")
             form_layout = QFormLayout(dialog)
 
             layer_sizes = [self.input_spin.value()] + [spin.value() for spin in self.hidden_layer_inputs] + [self.output_spin.value()]
-
             self.manual_weights = []
             self.manual_biases = []
 
             for l in range(len(layer_sizes) - 1):
                 w = QLineEdit("0.1")
                 b = QLineEdit("0.0")
-                form_layout.addRow(f"Layer {l+1} Weight Matrix (shape {layer_sizes[l+1]}x{layer_sizes[l]}):", w)
-                form_layout.addRow(f"Layer {l+1} Bias Vector (length {layer_sizes[l+1]}):", b)
+                form_layout.addRow(f"Layer {l+1} Weight Matrix ({layer_sizes[l+1]}x{layer_sizes[l]}):", w)
+                form_layout.addRow(f"Layer {l+1} Bias Vector ({layer_sizes[l+1]}):", b)
                 self.manual_weights.append(w)
                 self.manual_biases.append(b)
 
@@ -207,7 +221,7 @@ class DNNConfigurator(QWidget):
             form_layout.addWidget(buttons)
 
             if dialog.exec_():
-                QMessageBox.information(self, "Başarılı", "Ağırlık ve bias değerleri kaydedildi (şimdilik sadece gösterim amaçlı).")
+                QMessageBox.information(self, "Başarılı", "Ağırlık ve bias değerleri kaydedildi (şimdilik sadece görüntüleme amaçlı).")
 
         except Exception as e:
             QMessageBox.warning(self, "Parametre Girişi Hatası", str(e))
