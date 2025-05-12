@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (
     QWidget, QLabel, QSpinBox, QVBoxLayout, QHBoxLayout,
     QPushButton, QLineEdit, QGridLayout, QTextEdit, QMessageBox, QGroupBox,
     QScrollArea, QDialog, QFormLayout, QDialogButtonBox, QComboBox,
-    QDoubleSpinBox, QApplication
+    QDoubleSpinBox, QApplication, QSizePolicy
 )
 
 import matplotlib
@@ -10,6 +10,7 @@ matplotlib.use('Qt5Agg')
 from matplotlib import pyplot as plt
 from matplotlib.patches import FancyArrowPatch
 
+# backend.py aynı dizinde varsayılıyor
 from backend import DeepDNN
 import numpy as np
 import sys
@@ -19,7 +20,7 @@ class DNNConfigurator(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DNN Architecture Simulator")
-        self.resize(1200, 800)
+        self.resize(1200, 850) # Yüksekliği biraz artırdım
 
         # Arayüz Elemanları
         self.input_spin = QSpinBox()
@@ -27,8 +28,8 @@ class DNNConfigurator(QWidget):
         self.hidden_spin = QSpinBox()
         self.activation_combo = QComboBox()
         self.loss_combo = QComboBox()
-        self.lr_spinbox = QDoubleSpinBox() # Öğrenme Oranı için
-        self.steps_spinbox = QSpinBox()    # Adım Sayısı için
+        self.lr_spinbox = QDoubleSpinBox()
+        self.steps_spinbox = QSpinBox()
 
         # Diğer Üyeler
         self.input_boxes = []
@@ -38,16 +39,21 @@ class DNNConfigurator(QWidget):
         self.result_text = QTextEdit()
         self.network_config = None
         self.dnn = None
-        self.current_x = None # Hazırlanan giriş verisi
-        self.current_y = None # Hazırlanan hedef veri
+        self.current_x = None
+        self.current_y = None
+        self.loss_history = [] # Kayıp geçmişi için liste
+        self.total_steps = 0   # Toplam adım sayacı
 
         self.init_ui()
 
     def init_ui(self):
         main_layout = QVBoxLayout()
 
-        # --- Yapılandırma Grupları (Input, Output, Hidden) ---
-        # (Bu kısımlar önceki kodla aynı, değişiklik yok)
+        # --- Yapılandırma Grupları ---
+        config_h_layout = QHBoxLayout() # Yatayda gruplayalım
+
+        # Sol Taraf: Input, Output, Hidden
+        left_config_layout = QVBoxLayout()
         # Input Group
         input_group = QGroupBox("Input Yapılandırması")
         input_layout = QVBoxLayout()
@@ -58,7 +64,7 @@ class DNNConfigurator(QWidget):
         input_count_layout.addWidget(self.input_spin)
         input_layout.addLayout(input_count_layout)
         self.input_grid = QGridLayout(); input_layout.addLayout(self.input_grid)
-        input_group.setLayout(input_layout); main_layout.addWidget(input_group)
+        input_group.setLayout(input_layout); left_config_layout.addWidget(input_group)
         self.update_input_boxes()
 
         # Output Group
@@ -71,9 +77,13 @@ class DNNConfigurator(QWidget):
         output_count_layout.addWidget(self.output_spin)
         output_layout.addLayout(output_count_layout)
         self.output_grid = QGridLayout(); output_layout.addLayout(self.output_grid)
-        output_group.setLayout(output_layout); main_layout.addWidget(output_group)
+        output_group.setLayout(output_layout); left_config_layout.addWidget(output_group)
         self.update_output_boxes()
+        left_config_layout.addStretch() # Solu yukarı iter
+        config_h_layout.addLayout(left_config_layout)
 
+        # Sağ Taraf: Hidden Layers, Training Params
+        right_config_layout = QVBoxLayout()
         # Hidden Group
         hidden_group = QGroupBox("Gizli Katman Yapılandırması")
         hidden_layout = QVBoxLayout()
@@ -84,70 +94,77 @@ class DNNConfigurator(QWidget):
         hidden_count_layout.addWidget(self.hidden_spin)
         hidden_layout.addLayout(hidden_count_layout)
         self.hidden_grid = QGridLayout(); hidden_layout.addLayout(self.hidden_grid)
-        hidden_group.setLayout(hidden_layout); main_layout.addWidget(hidden_group)
+        hidden_group.setLayout(hidden_layout); right_config_layout.addWidget(hidden_group)
         self.update_hidden_inputs()
 
-        # --- Eğitim Parametreleri (Aktivasyon, Kayıp, Öğrenme Oranı) ---
+        # Eğitim Parametreleri Group
         train_params_group = QGroupBox("Eğitim Parametreleri")
-        train_params_layout = QGridLayout() # Grid layout kullanalım
-        train_params_layout.addWidget(QLabel("Gizli Katman Aktivasyonu:"), 0, 0)
+        train_params_layout = QGridLayout()
+        train_params_layout.addWidget(QLabel("Gizli K. Aktivasyonu:"), 0, 0)
         self.activation_combo.addItems(["relu", "sigmoid"])
         train_params_layout.addWidget(self.activation_combo, 0, 1)
-
         train_params_layout.addWidget(QLabel("Kayıp Fonksiyonu:"), 1, 0)
         self.loss_combo.addItems(["mse", "mae", "rmse", "cross_entropy"])
         train_params_layout.addWidget(self.loss_combo, 1, 1)
-
-        # YENİ: Öğrenme Oranı
         train_params_layout.addWidget(QLabel("Öğrenme Oranı:"), 2, 0)
-        self.lr_spinbox.setRange(0.0001, 1.0)
-        self.lr_spinbox.setDecimals(4)
-        self.lr_spinbox.setSingleStep(0.001)
-        self.lr_spinbox.setValue(0.05) # Varsayılan değer
+        self.lr_spinbox.setRange(0.0001, 1.0); self.lr_spinbox.setDecimals(4)
+        self.lr_spinbox.setSingleStep(0.001); self.lr_spinbox.setValue(0.05)
         train_params_layout.addWidget(self.lr_spinbox, 2, 1)
         train_params_group.setLayout(train_params_layout)
-        main_layout.addWidget(train_params_group)
+        right_config_layout.addWidget(train_params_group)
+        right_config_layout.addStretch() # Sağı yukarı iter
+        config_h_layout.addLayout(right_config_layout)
+
+        main_layout.addLayout(config_h_layout) # Yapılandırma gruplarını ana layouta ekle
 
         # --- Kontrol Butonları ---
-        control_layout = QVBoxLayout() # Butonları dikey gruplayalım
+        control_group = QGroupBox("Kontroller")
+        control_grid_layout = QGridLayout() # Grid kullanalım
 
-        # YENİ: Çoklu Adım Eğitme Alanı
-        multi_step_layout = QHBoxLayout()
-        multi_step_layout.addWidget(QLabel("Adım Sayısı:"))
-        self.steps_spinbox.setRange(1, 100000) # Geniş bir aralık
-        self.steps_spinbox.setValue(100) # Varsayılan adım sayısı
-        self.steps_spinbox.setFixedWidth(100)
-        multi_step_layout.addWidget(self.steps_spinbox)
+        # Çoklu Adım Eğitme Alanı
+        control_grid_layout.addWidget(QLabel("Adım Sayısı:"), 0, 0)
+        self.steps_spinbox.setRange(1, 100000); self.steps_spinbox.setValue(100)
+        self.steps_spinbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed) # Genişlesin
+        control_grid_layout.addWidget(self.steps_spinbox, 0, 1)
         train_multi_btn = QPushButton("Eğit (Adım Sayısı Kadar)")
-        train_multi_btn.clicked.connect(self.run_multi_steps) # Yeni metoda bağla
-        multi_step_layout.addWidget(train_multi_btn)
-        multi_step_layout.addStretch() # Butonları sola yasla
-        control_layout.addLayout(multi_step_layout)
+        train_multi_btn.clicked.connect(self.run_multi_steps)
+        control_grid_layout.addWidget(train_multi_btn, 0, 2)
 
-        # Mevcut Butonlar (Tek Adım, Parametre Girişi, Görselleştirme)
-        single_button_layout = QHBoxLayout()
-        run_btn = QPushButton("Adım At (1 Kez Eğit)") # İsmi netleştirelim
+        # Tek Adım Butonu
+        run_btn = QPushButton("Adım At (1 Kez Eğit)")
         run_btn.clicked.connect(self.run_step)
-        single_button_layout.addWidget(run_btn)
+        control_grid_layout.addWidget(run_btn, 1, 0)
 
+        # Parametre Girişi Butonu
         param_btn = QPushButton("Ağırlık/Bias Parametre Girişi")
         param_btn.clicked.connect(self.enter_parameters)
-        single_button_layout.addWidget(param_btn)
+        control_grid_layout.addWidget(param_btn, 1, 1)
 
+        # Görselleştirme Butonu
         diagram_btn = QPushButton("Ağ Yapısını Görselleştir")
         diagram_btn.clicked.connect(self.visualize_architecture)
-        single_button_layout.addWidget(diagram_btn)
-        single_button_layout.addStretch()
-        control_layout.addLayout(single_button_layout)
+        control_grid_layout.addWidget(diagram_btn, 1, 2)
 
-        main_layout.addLayout(control_layout) # Kontrol butonları grubunu ekle
+        # YENİ: Kayıp Grafiği Butonu
+        loss_plot_btn = QPushButton("Kayıp Grafiğini Çizdir")
+        loss_plot_btn.clicked.connect(self.plot_loss_graph)
+        control_grid_layout.addWidget(loss_plot_btn, 2, 0)
+
+        # YENİ: Sıfırla Butonu
+        reset_btn = QPushButton("Ağı Sıfırla")
+        reset_btn.clicked.connect(self.reset_network)
+        control_grid_layout.addWidget(reset_btn, 2, 1)
+
+        control_group.setLayout(control_grid_layout)
+        main_layout.addWidget(control_group) # Kontrol butonları grubunu ekle
 
 
         # --- Sonuçlar Alanı ---
         result_group = QGroupBox("Sonuçlar")
         result_layout = QVBoxLayout()
         self.result_text.setReadOnly(True)
-        self.result_text.setFixedHeight(150)
+        self.result_text.setMinimumHeight(120) # Yeterli yükseklik verelim
+        self.result_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding) # Genişlesin
         result_layout.addWidget(self.result_text)
         result_group.setLayout(result_layout)
         main_layout.addWidget(result_group)
@@ -163,7 +180,7 @@ class DNNConfigurator(QWidget):
         window_layout.addWidget(scroll)
         self.setLayout(window_layout)
 
-    # --- UI Güncelleme Fonksiyonları (Aynı Kalabilir) ---
+    # --- UI Güncelleme Fonksiyonları ---
     def clear_grid_layout(self, grid_layout):
         while grid_layout.count():
             item = grid_layout.takeAt(0); widget = item.widget()
@@ -177,7 +194,9 @@ class DNNConfigurator(QWidget):
             row, col = i // cols, (i % cols) * 2
             self.input_grid.addWidget(label, row, col); self.input_grid.addWidget(edit, row, col + 1)
             self.input_boxes.append(edit)
-        self.dnn = None # Yapı değişti, sıfırla
+        if self.dnn: # Yapı değiştiğinde sıfırla
+            self.reset_network(show_message=False) # Mesaj göstermeden sıfırla
+
 
     def update_output_boxes(self):
         self.clear_grid_layout(self.output_grid); self.output_boxes = []
@@ -187,89 +206,93 @@ class DNNConfigurator(QWidget):
             row, col = i // cols, (i % cols) * 2
             self.output_grid.addWidget(label, row, col); self.output_grid.addWidget(edit, row, col + 1)
             self.output_boxes.append(edit)
-        self.dnn = None # Yapı değişti, sıfırla
+        if self.dnn:
+            self.reset_network(show_message=False)
+
 
     def update_hidden_inputs(self):
         self.clear_grid_layout(self.hidden_grid); self.hidden_layer_inputs = []
         cols = 2
         for i in range(self.hidden_spin.value()):
-            label = QLabel(f"Gizli Katman {i+1} Nöron Sayısı:"); spin = QSpinBox()
+            label = QLabel(f"Gizli K. {i+1} Nöron:"); spin = QSpinBox()
             spin.setMinimum(1); spin.setValue(4); spin.setFixedWidth(80)
             row, col = i // cols, (i % cols) * 2
             self.hidden_grid.addWidget(label, row, col); self.hidden_grid.addWidget(spin, row, col + 1)
             self.hidden_layer_inputs.append(spin)
-        self.dnn = None # Yapı değişti, sıfırla
+        if self.dnn:
+             self.reset_network(show_message=False)
+
 
     # --- Yardımcı Metod: DNN Hazırlama ve Veri Alma ---
     def _prepare_dnn_and_data(self):
         """DNN nesnesini ve eğitim verisini UI'dan alıp hazırlar."""
         try:
-            # Ağ yapılandırmasını al
             num_inputs = self.input_spin.value()
             num_outputs = self.output_spin.value()
             hidden_nodes = [spin.value() for spin in self.hidden_layer_inputs]
             current_config = [num_inputs] + hidden_nodes + [num_outputs]
 
-            # Giriş (X) ve Hedef (Y) değerlerini al ve doğrula
             x_vals = []
             for box in self.input_boxes:
                 try: x_vals.append(float(box.text()))
-                except ValueError:
-                    QMessageBox.warning(self, "Giriş Hatası", f"Geçersiz giriş değeri: '{box.text()}'."); return False
+                except ValueError: QMessageBox.warning(self, "Giriş Hatası", f"Geçersiz: '{box.text()}'."); return False
             self.current_x = np.array(x_vals).reshape(-1, 1)
 
             y_vals = []
             for box in self.output_boxes:
                  try: y_vals.append(float(box.text()))
-                 except ValueError:
-                    QMessageBox.warning(self, "Hedef Çıkış Hatası", f"Geçersiz hedef çıkış değeri: '{box.text()}'."); return False
+                 except ValueError: QMessageBox.warning(self, "Hedef Çıkış Hatası", f"Geçersiz: '{box.text()}'."); return False
             self.current_y = np.array(y_vals).reshape(-1, 1)
 
-            # Girdi/çıktı sayısı kontrolü
-            if len(x_vals) != num_inputs:
-                QMessageBox.warning(self, "Yapılandırma Hatası", f"Giriş sayısı ({num_inputs}) ile girilen değer sayısı ({len(x_vals)}) uyuşmuyor."); return False
-            if len(y_vals) != num_outputs:
-                 QMessageBox.warning(self, "Yapılandırma Hatası", f"Çıkış sayısı ({num_outputs}) ile girilen hedef değer sayısı ({len(y_vals)}) uyuşmuyor."); return False
+            if len(x_vals) != num_inputs: QMessageBox.warning(self, "Yapılandırma Hatası", f"Giriş sayısı/değer sayısı uyuşmuyor."); return False
+            if len(y_vals) != num_outputs: QMessageBox.warning(self, "Yapılandırma Hatası", f"Çıkış sayısı/hedef sayısı uyuşmuyor."); return False
 
-            # Eğitim parametrelerini al
             activation = self.activation_combo.currentText()
             loss_type = self.loss_combo.currentText()
-            learning_rate = self.lr_spinbox.value() # YENİ: Öğrenme oranını al
+            learning_rate = self.lr_spinbox.value()
 
-            # DNN nesnesini kontrol et veya oluştur/güncelle
+            # Yapı veya ana hiperparametreler değiştiyse DNN'i sıfırdan oluştur
             config_changed = (self.dnn is None or
                               self.dnn.layer_sizes != current_config or
                               self.dnn.hidden_activation != activation or
-                              self.dnn.loss_type != loss_type or
-                              self.dnn.learning_rate != learning_rate)
+                              self.dnn.loss_type != loss_type) # LR değişikliği parametreleri etkilemez, ama yine de başlatabiliriz
 
             if config_changed:
-                 # Parametre girişiyle oluşturulmuşsa bile, eğitim parametreleri değiştiyse yeniden başlatalım
-                 self.dnn = DeepDNN(current_config,
-                                    learning_rate=learning_rate, # UI'dan alınan LR
-                                    hidden_activation=activation,
-                                    loss_type=loss_type)
+                 self.dnn = DeepDNN(current_config, learning_rate=learning_rate,
+                                    hidden_activation=activation, loss_type=loss_type)
                  self.result_text.append(f"DNN modeli UI ayarlarına göre oluşturuldu/güncellendi (LR={learning_rate:.4f}).")
-                 self.network_config = current_config # Sakla
+                 self.network_config = current_config
+                 # Yeni yapılandırma için geçmişi sıfırla
+                 self.loss_history = []
+                 self.total_steps = 0
+            else:
+                # Sadece öğrenme oranı değiştiyse, mevcut DNN'de güncelle
+                 if self.dnn.learning_rate != learning_rate:
+                     self.dnn.learning_rate = learning_rate
+                     self.result_text.append(f"Öğrenme oranı {learning_rate:.4f} olarak güncellendi.")
 
-            return True # Hazırlık başarılı
+            return True
 
         except Exception as e:
             traceback.print_exc()
-            QMessageBox.critical(self, "Hazırlık Hatası", f"DNN veya veri hazırlanırken hata: {str(e)}")
+            QMessageBox.critical(self, "Hazırlık Hatası", f"Hata: {str(e)}")
             return False
 
 
     # --- Eğitim Adımı Çalıştırma Metodları ---
     def run_step(self):
         """Tek bir eğitim adımı çalıştırır."""
-        if self._prepare_dnn_and_data(): # Önce hazırlığı yap
+        if self._prepare_dnn_and_data():
             try:
                 loss, y_pred = self.dnn.train_step(self.current_x, self.current_y)
 
+                # Adım ve Kayıp Geçmişini Güncelle
+                self.total_steps += 1
+                self.loss_history.append((self.total_steps, loss))
+
                 # Sonuçları göster
                 self.result_text.append("-" * 20)
-                self.result_text.append(f"[1 Adım] Giriş (X): {self.current_x.ravel()}")
+                self.result_text.append(f"[Adım {self.total_steps}] Giriş (X): {self.current_x.ravel()}")
                 self.result_text.append(f"Hedef (Y): {self.current_y.ravel()}")
                 self.result_text.append(f"Tahmin (Y_pred): {np.round(y_pred.ravel(), 4)}")
                 self.result_text.append(f"Kayıp ({self.dnn.loss_type}): {loss:.6f}")
@@ -278,51 +301,58 @@ class DNNConfigurator(QWidget):
 
             except Exception as e:
                 traceback.print_exc()
-                QMessageBox.critical(self, "Çalıştırma Hatası", f"Tek adım atılırken bir hata oluştu: {str(e)}")
+                QMessageBox.critical(self, "Çalıştırma Hatası", f"Tek adım atılırken hata: {str(e)}")
 
-    # YENİ: Çoklu Adım Eğitme Metodu
     def run_multi_steps(self):
         """Belirtilen adım sayısı kadar eğitim çalıştırır."""
-        if self._prepare_dnn_and_data(): # Önce hazırlığı yap
+        if self._prepare_dnn_and_data():
             try:
-                num_steps = self.steps_spinbox.value()
+                num_steps_to_run = self.steps_spinbox.value()
                 initial_loss = -1
                 final_loss = -1
                 final_y_pred = None
+                start_step = self.total_steps + 1
 
-                self.result_text.append(f"--- {num_steps} Adımlık Eğitim Başlatılıyor ---")
-                QApplication.processEvents() # Arayüzün yanıt vermesini sağla
+                self.result_text.append(f"--- {num_steps_to_run} Adımlık Eğitim Başlatılıyor (Adım {start_step}'den itibaren) ---")
+                QApplication.processEvents()
 
-                for i in range(num_steps):
+                for i in range(num_steps_to_run):
+                    current_step_number = self.total_steps + 1
                     loss, y_pred = self.dnn.train_step(self.current_x, self.current_y)
-                    if i == 0:
-                        initial_loss = loss
-                    if i == num_steps - 1: # Son adımın sonuçlarını sakla
+
+                    # Adım ve Kayıp Geçmişini Güncelle
+                    self.total_steps = current_step_number
+                    self.loss_history.append((self.total_steps, loss))
+
+                    if i == 0: initial_loss = loss # Döngünün ilk kaybı
+                    if i == num_steps_to_run - 1: # Son adımın sonuçları
                         final_loss = loss
                         final_y_pred = y_pred
 
-                    # İsteğe bağlı: Her N adımda bir loglama yapılabilir
-                    # if (i + 1) % (num_steps // 10) == 0: # %10 ilerlemede logla
-                    #    self.result_text.append(f"Adım {i+1}/{num_steps}, Kayıp: {loss:.6f}")
-                    #    QApplication.processEvents()
+                    # İsteğe Bağlı Loglama (her 10% veya 100 adımda bir)
+                    log_interval = max(1, num_steps_to_run // 10) if num_steps_to_run > 100 else 100
+                    if (i + 1) % log_interval == 0 and num_steps_to_run > 1:
+                       self.result_text.append(f"  Adım {self.total_steps}/{start_step + num_steps_to_run - 1}, Kayıp: {loss:.6f}")
+                       QApplication.processEvents()
+
 
                 # Sonuçları göster
-                self.result_text.append(f"--- {num_steps} Adımlık Eğitim Tamamlandı ---")
-                self.result_text.append(f"Giriş (X): {self.current_x.ravel()}")
-                self.result_text.append(f"Hedef (Y): {self.current_y.ravel()}")
+                self.result_text.append(f"--- {num_steps_to_run} Adımlık Eğitim Tamamlandı (Son Adım: {self.total_steps}) ---")
+                self.result_text.append(f"Giriş (X): {self.current_x.ravel()}") # Sabit giriş varsayımı
+                self.result_text.append(f"Hedef (Y): {self.current_y.ravel()}") # Sabit hedef varsayımı
                 if final_y_pred is not None:
                     self.result_text.append(f"Son Tahmin (Y_pred): {np.round(final_y_pred.ravel(), 4)}")
-                self.result_text.append(f"Başlangıç Kaybı: {initial_loss:.6f}")
-                self.result_text.append(f"Son Kayıp ({self.dnn.loss_type}): {final_loss:.6f}")
+                self.result_text.append(f"Başlangıç Kaybı (Adım {start_step}): {initial_loss:.6f}")
+                self.result_text.append(f"Son Kayıp (Adım {self.total_steps}): {final_loss:.6f}")
                 self.result_text.append("")
                 self.result_text.verticalScrollBar().setValue(self.result_text.verticalScrollBar().maximum())
 
             except Exception as e:
                 traceback.print_exc()
-                QMessageBox.critical(self, "Çalıştırma Hatası", f"{num_steps} adım atılırken bir hata oluştu: {str(e)}")
+                QMessageBox.critical(self, "Çalıştırma Hatası", f"{num_steps_to_run} adım atılırken hata: {str(e)}")
 
 
-    # --- Parametre Girişi ve Görselleştirme (Aynı Kalabilir) ---
+    # --- Parametre Girişi ---
     def enter_parameters(self):
         """Her bir ağırlık ve bias için ayrı giriş alanı sunan diyalog açar."""
         try:
@@ -331,14 +361,13 @@ class DNNConfigurator(QWidget):
             hidden_nodes = [spin.value() for spin in self.hidden_layer_inputs]
             layer_sizes = [num_inputs] + hidden_nodes + [num_outputs]
 
-            if len(layer_sizes) < 2:
-                 QMessageBox.warning(self, "Hata", "Parametre girmek için geçerli bir ağ yapısı tanımlanmalı."); return
+            if len(layer_sizes) < 2: QMessageBox.warning(self, "Hata", "Parametre girmek için geçerli yapı yok."); return
 
             dialog = QDialog(self); dialog.setWindowTitle("Parametre Girişi (Tek Tek)")
             dialog.setMinimumWidth(600); dialog.setMinimumHeight(400)
             scroll_area = QScrollArea(dialog); scroll_area.setWidgetResizable(True)
             scroll_content = QWidget(); params_layout = QVBoxLayout(scroll_content)
-            self.manual_param_widgets = {}
+            self.manual_param_widgets = {} # Her diyalogda sıfırla
 
             for l in range(len(layer_sizes) - 1):
                 layer_index = l + 1; prev_layer_size = layer_sizes[l]; current_layer_size = layer_sizes[l+1]
@@ -381,7 +410,7 @@ class DNNConfigurator(QWidget):
             dialog_layout = QVBoxLayout(dialog); dialog_layout.addWidget(scroll_area); dialog_layout.addWidget(buttons)
 
             if dialog.exec_() == QDialog.Accepted:
-                new_params = {}; learning_rate = self.lr_spinbox.value() # LR'ı da alalım
+                new_params = {}; learning_rate = self.lr_spinbox.value()
                 try:
                     for l in range(len(layer_sizes) - 1):
                         layer_idx = l + 1; w_key = f"W{layer_idx}"; b_key = f"b{layer_idx}"
@@ -392,38 +421,41 @@ class DNNConfigurator(QWidget):
                         for j in range(rows): b[j, 0] = self.manual_param_widgets[b_key][j].value()
                         new_params[w_key] = W; new_params[b_key] = b
 
-                    if self.dnn is None: # Eğer yoksa yeni oluştur
+                    if self.dnn is None:
                          self.dnn = DeepDNN(layer_sizes, learning_rate=learning_rate,
                                             hidden_activation=self.activation_combo.currentText(),
                                             loss_type=self.loss_combo.currentText())
-                         self.result_text.append("Yeni DNN modeli oluşturuldu (parametre girişi sonrası).")
-                    else: # Varsa öğrenme oranını da güncelle
+                         self.result_text.append("Yeni DNN modeli (manuel parametrelerle) oluşturuldu.")
+                    else:
                          self.dnn.learning_rate = learning_rate
 
                     self.dnn.parameters = new_params; self.dnn.layer_sizes = layer_sizes
-                    QMessageBox.information(self, "Başarılı", "Girilen ağırlık ve bias değerleri ağa yüklendi.")
-                    self.result_text.append(f"Manuel parametreler ağa yüklendi (LR={learning_rate:.4f}).")
-                    self.manual_param_widgets = {}
+                    # Manuel parametre girişi yapıldığında eğitim geçmişini sıfırla
+                    self.loss_history = []
+                    self.total_steps = 0
+                    QMessageBox.information(self, "Başarılı", "Parametreler ağa yüklendi.")
+                    self.result_text.append(f"Manuel parametreler ağa yüklendi (LR={learning_rate:.4f}). Adım sayacı sıfırlandı.")
+                    self.manual_param_widgets = {} # Temizle
                 except Exception as parse_error:
                      traceback.print_exc(); QMessageBox.critical(self, "Parametre Yükleme Hatası", f"Hata: {parse_error}")
-            else: self.manual_param_widgets = {}
+            else: self.manual_param_widgets = {} # İptal edilirse de temizle
         except Exception as e:
             traceback.print_exc(); QMessageBox.warning(self, "Parametre Girişi Hatası", f"Diyalog hatası: {str(e)}")
 
 
+    # --- Görselleştirme ve Sıfırlama ---
     def visualize_architecture(self):
         """Ağ mimarisini, ağırlık ve biasları görselleştirir."""
         try:
             params = None; layer_sizes = []
             if self.dnn is None:
-                QMessageBox.information(self, "Bilgi","Ağırlık/Bias görmek için ağı başlatın (Adım At veya Parametre Gir).");
+                QMessageBox.information(self, "Bilgi","Ağırlık/Bias görmek için ağı başlatın.");
                 layer_sizes = [self.input_spin.value()] + [spin.value() for spin in self.hidden_layer_inputs] + [self.output_spin.value()]
                 params = None
             else:
                 layer_sizes = self.dnn.layer_sizes; params = self.dnn.parameters
 
-            if not layer_sizes or len(layer_sizes) < 2:
-                 QMessageBox.warning(self, "Hata", "Görselleştirilecek yapı yok."); return
+            if not layer_sizes or len(layer_sizes) < 2: QMessageBox.warning(self, "Hata", "Görselleştirilecek yapı yok."); return
 
             max_neurons = max(layer_sizes) if layer_sizes else 1; num_layers_viz = len(layer_sizes)
             fig_width = max(12, num_layers_viz * 3.5); fig_height = max(8, max_neurons * 1.0)
@@ -434,8 +466,7 @@ class DNNConfigurator(QWidget):
                 total_height = (layer_size - 1) * v_spacing; y_start = (max_neurons * v_spacing - total_height) / 2.0
                 layer_positions = []
                 layer_name = f"Giriş (L0)" if i==0 else f"Çıkış (L{i})" if i==num_layers_viz-1 else f"Gizli {i} (L{i})"
-                ax.text(i * h_spacing, y_start + total_height + v_spacing, f"{layer_name}\n({layer_size} nöron)",
-                        ha='center', va='bottom', fontsize=9, weight='bold')
+                ax.text(i * h_spacing, y_start + total_height + v_spacing, f"{layer_name}\n({layer_size} nöron)", ha='center', va='bottom', fontsize=9, weight='bold')
                 for j in range(layer_size):
                     x = i * h_spacing; y = y_start + j * v_spacing
                     circle = plt.Circle((x, y), node_radius, color='skyblue', zorder=4, ec='black')
@@ -444,8 +475,7 @@ class DNNConfigurator(QWidget):
                     if params and i > 0: # Biaslar
                         bias_key = f"b{i}"
                         if bias_key in params and params[bias_key].shape[0] > j:
-                            bias_val = params[bias_key][j, 0]
-                            ax.text(x, y - node_radius * 1.5, f"b={bias_val:.2f}",ha='center', va='top', zorder=5, fontsize=6, color='red')
+                            bias_val = params[bias_key][j, 0]; ax.text(x, y - node_radius * 1.5, f"b={bias_val:.2f}",ha='center', va='top', zorder=5, fontsize=6, color='red')
                 neuron_positions.append(layer_positions)
 
             if params: # Ağırlıklar
@@ -457,13 +487,11 @@ class DNNConfigurator(QWidget):
                             for dst_neuron in neuron_positions[l + 1]:
                                 src_id, dst_id = src_neuron['id'], dst_neuron['id']
                                 if dst_id < W.shape[0] and src_id < W.shape[1]:
-                                    src_pos, dst_pos = src_neuron['pos'], dst_neuron['pos']
-                                    weight_val = W[dst_id, src_id]
+                                    src_pos, dst_pos = src_neuron['pos'], dst_neuron['pos']; weight_val = W[dst_id, src_id]
                                     arrow = FancyArrowPatch(src_pos, dst_pos, arrowstyle='->', mutation_scale=10, color='gray', lw=0.5, zorder=1, shrinkA=node_radius*1.2, shrinkB=node_radius*1.2)
                                     ax.add_patch(arrow)
                                     mid_x, mid_y = src_pos[0]*0.6+dst_pos[0]*0.4, src_pos[1]*0.6+dst_pos[1]*0.4
                                     ax.text(mid_x, mid_y, f"w={weight_val:.2f}", fontsize=6, color='blue', ha='center', va='center', zorder=3, bbox=dict(boxstyle='round,pad=0.1', fc='white', alpha=0.7, ec='none'))
-                                # else: print(f"Warning: Index out of bounds for W{l+1}") # İsteğe bağlı uyarı
             else: # Sadece oklar
                  for l in range(num_layers_viz - 1):
                      for src_neuron in neuron_positions[l]:
@@ -481,8 +509,48 @@ class DNNConfigurator(QWidget):
         except Exception as e:
             traceback.print_exc(); QMessageBox.warning(self, "Görselleştirme Hatası", f"Hata: {str(e)}")
 
+    # YENİ: Kayıp Grafiği Çizdirme
+    def plot_loss_graph(self):
+        """Eğitim sırasındaki kayıp değerlerini çizer."""
+        if not self.loss_history:
+            QMessageBox.information(self, "Bilgi", "Gösterilecek kayıp geçmişi bulunmuyor. Lütfen önce ağı eğitin.")
+            return
 
-# Ana uygulama kısmı
+        try:
+            steps, losses = zip(*self.loss_history) # Adım ve kayıp değerlerini ayır
+
+            plt.figure(figsize=(10, 6)) # Yeni bir figür oluştur
+            plt.plot(steps, losses, marker='.', linestyle='-', markersize=4)
+            plt.xlabel("Eğitim Adımı Sayısı")
+            plt.ylabel("Kayıp Değeri")
+            plt.title(f"Eğitim Kayıp Grafiği ({self.dnn.loss_type if self.dnn else 'N/A'})")
+            plt.grid(True)
+            plt.tight_layout()
+            plt.show() # GUI'yi kilitler
+
+        except Exception as e:
+             traceback.print_exc(); QMessageBox.warning(self, "Grafik Hatası", f"Kayıp grafiği çizilirken hata: {str(e)}")
+
+
+    # YENİ: Ağı Sıfırlama
+    def reset_network(self, show_message=True):
+        """DNN durumunu, sonuçları ve kayıp geçmişini sıfırlar."""
+        self.dnn = None
+        self.network_config = None
+        self.loss_history = []
+        self.total_steps = 0
+        self.current_x = None
+        self.current_y = None
+        self.result_text.clear()
+        self.result_text.append("Ağ durumu ve sonuçlar sıfırlandı.")
+        # UI'daki girişleri sıfırlamak isteğe bağlıdır, şimdilik yapmayalım
+        # self.input_spin.setValue(3) # vb. başlangıç değerlerine döndürme
+
+        if show_message:
+             QMessageBox.information(self, "Sıfırlandı", "Yapay sinir ağı durumu, sonuçlar ve kayıp geçmişi sıfırlandı.")
+
+
+# Ana uygulama kısmı (main.py yerine burada çalıştırılabilir)
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = DNNConfigurator()
