@@ -1,14 +1,21 @@
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QSpinBox, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLineEdit, QGridLayout, QTextEdit, QMessageBox, QGroupBox, QScrollArea, QDialog, QFormLayout, QDialogButtonBox
+    QPushButton, QLineEdit, QGridLayout, QTextEdit, QMessageBox, QGroupBox,
+    QScrollArea, QDialog, QFormLayout, QDialogButtonBox, QComboBox
 )
-from backend import SimpleDNN
+
+from backend import DeepDNN
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.patches import FancyArrowPatch
 
 class DNNConfigurator(QWidget):
     def __init__(self):
+        self.activation_combo = QComboBox()
+        self.activation_combo.addItems(["relu", "sigmoid"])
+        self.loss_combo = QComboBox()
+        self.loss_combo.addItems(["mse", "mae", "rmse", "cross_entropy"])
+
         super().__init__()
         self.setWindowTitle("DNN Architecture Simulator")
         self.resize(1200, 800)
@@ -84,7 +91,15 @@ class DNNConfigurator(QWidget):
         param_btn = QPushButton("Ağırlık/Bias Girişi")
         param_btn.clicked.connect(self.enter_parameters)
         layout.addWidget(param_btn)
-
+        # Aktivasyon ve Kayıp Fonksiyonu Seçimi
+        act_loss_group = QGroupBox("Aktivasyon ve Kayıp Fonksiyonu")
+        act_loss_layout = QHBoxLayout()
+        act_loss_layout.addWidget(QLabel("Hidden Activation:"))
+        act_loss_layout.addWidget(self.activation_combo)
+        act_loss_layout.addWidget(QLabel("Loss Function:"))
+        act_loss_layout.addWidget(self.loss_combo)
+        act_loss_group.setLayout(act_loss_layout)
+        layout.addWidget(act_loss_group)
         # RUN BUTTON
         btn = QPushButton("Adım At")
         btn.clicked.connect(self.run_step)
@@ -239,14 +254,20 @@ class DNNConfigurator(QWidget):
             y_vals = [float(box.text()) for box in self.output_boxes]
             y = np.array(y_vals).reshape(-1, 1)
 
+            activation = self.activation_combo.currentText()
+            loss_type = self.loss_combo.currentText()
+
             if self.dnn is None:
-                self.dnn = SimpleDNN(self.network_config)
+                self.dnn = DeepDNN(self.network_config, learning_rate=0.01,
+                                hidden_activation=activation,
+                                loss_type=loss_type)
+
             loss, y_pred = self.dnn.train_step(x, y)
 
             self.result_text.append("-----")
             self.result_text.append(f"Input: {x.ravel()}")
             self.result_text.append(f"Output: {y_pred.ravel()}")
-            self.result_text.append(f"Loss: {loss:.6f}\n")
+            self.result_text.append(f"Loss ({loss_type}): {loss:.6f}\n")
 
         except Exception as e:
             QMessageBox.warning(self, "Hata", str(e))
