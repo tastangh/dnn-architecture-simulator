@@ -10,17 +10,16 @@ matplotlib.use('Qt5Agg')
 from matplotlib import pyplot as plt
 from matplotlib.patches import FancyArrowPatch
 
-# backend.py aynı dizinde varsayılıyor
 from backend import DeepDNN
 import numpy as np
 import sys
-import traceback # Hata ayıklama için
+import traceback 
 
 class DNNConfigurator(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DNN Architecture Simulator")
-        self.resize(1200, 850) # Yüksekliği biraz artırdım
+        self.resize(1200, 850) 
 
         # Arayüz Elemanları
         self.input_spin = QSpinBox()
@@ -41,8 +40,8 @@ class DNNConfigurator(QWidget):
         self.dnn = None
         self.current_x = None
         self.current_y = None
-        self.loss_history = [] # Kayıp geçmişi için liste
-        self.total_steps = 0   # Toplam adım sayacı
+        self.loss_history = []
+        self.total_steps = 0  
 
         self.init_ui()
 
@@ -50,7 +49,7 @@ class DNNConfigurator(QWidget):
         main_layout = QVBoxLayout()
 
         # --- Yapılandırma Grupları ---
-        config_h_layout = QHBoxLayout() # Yatayda gruplayalım
+        config_h_layout = QHBoxLayout() 
 
         # Sol Taraf: Input, Output, Hidden
         left_config_layout = QVBoxLayout()
@@ -79,7 +78,7 @@ class DNNConfigurator(QWidget):
         self.output_grid = QGridLayout(); output_layout.addLayout(self.output_grid)
         output_group.setLayout(output_layout); left_config_layout.addWidget(output_group)
         self.update_output_boxes()
-        left_config_layout.addStretch() # Solu yukarı iter
+        left_config_layout.addStretch() 
         config_h_layout.addLayout(left_config_layout)
 
         # Sağ Taraf: Hidden Layers, Training Params
@@ -112,19 +111,19 @@ class DNNConfigurator(QWidget):
         train_params_layout.addWidget(self.lr_spinbox, 2, 1)
         train_params_group.setLayout(train_params_layout)
         right_config_layout.addWidget(train_params_group)
-        right_config_layout.addStretch() # Sağı yukarı iter
+        right_config_layout.addStretch()
         config_h_layout.addLayout(right_config_layout)
 
-        main_layout.addLayout(config_h_layout) # Yapılandırma gruplarını ana layouta ekle
+        main_layout.addLayout(config_h_layout) 
 
         # --- Kontrol Butonları ---
         control_group = QGroupBox("Kontroller")
-        control_grid_layout = QGridLayout() # Grid kullanalım
+        control_grid_layout = QGridLayout() 
 
         # Çoklu Adım Eğitme Alanı
         control_grid_layout.addWidget(QLabel("Adım Sayısı:"), 0, 0)
         self.steps_spinbox.setRange(1, 100000); self.steps_spinbox.setValue(100)
-        self.steps_spinbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed) # Genişlesin
+        self.steps_spinbox.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed) 
         control_grid_layout.addWidget(self.steps_spinbox, 0, 1)
         train_multi_btn = QPushButton("Eğit (Adım Sayısı Kadar)")
         train_multi_btn.clicked.connect(self.run_multi_steps)
@@ -156,15 +155,15 @@ class DNNConfigurator(QWidget):
         control_grid_layout.addWidget(reset_btn, 2, 1)
 
         control_group.setLayout(control_grid_layout)
-        main_layout.addWidget(control_group) # Kontrol butonları grubunu ekle
+        main_layout.addWidget(control_group) 
 
 
         # --- Sonuçlar Alanı ---
         result_group = QGroupBox("Sonuçlar")
         result_layout = QVBoxLayout()
         self.result_text.setReadOnly(True)
-        self.result_text.setMinimumHeight(120) # Yeterli yükseklik verelim
-        self.result_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding) # Genişlesin
+        self.result_text.setMinimumHeight(120) 
+        self.result_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding) 
         result_layout.addWidget(self.result_text)
         result_group.setLayout(result_layout)
         main_layout.addWidget(result_group)
@@ -509,7 +508,6 @@ class DNNConfigurator(QWidget):
         except Exception as e:
             traceback.print_exc(); QMessageBox.warning(self, "Görselleştirme Hatası", f"Hata: {str(e)}")
 
-    # YENİ: Kayıp Grafiği Çizdirme
     def plot_loss_graph(self):
         """Eğitim sırasındaki kayıp değerlerini çizer."""
         if not self.loss_history:
@@ -532,7 +530,6 @@ class DNNConfigurator(QWidget):
              traceback.print_exc(); QMessageBox.warning(self, "Grafik Hatası", f"Kayıp grafiği çizilirken hata: {str(e)}")
 
 
-    # YENİ: Ağı Sıfırlama
     def reset_network(self, show_message=True):
         """DNN durumunu, sonuçları ve kayıp geçmişini sıfırlar."""
         self.dnn = None
@@ -543,8 +540,6 @@ class DNNConfigurator(QWidget):
         self.current_y = None
         self.result_text.clear()
         self.result_text.append("Ağ durumu ve sonuçlar sıfırlandı.")
-        # UI'daki girişleri sıfırlamak isteğe bağlıdır, şimdilik yapmayalım
-        # self.input_spin.setValue(3) # vb. başlangıç değerlerine döndürme
 
         if show_message:
              QMessageBox.information(self, "Sıfırlandı", "Yapay sinir ağı durumu, sonuçlar ve kayıp geçmişi sıfırlandı.")
